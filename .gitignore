@@ -1,53 +1,89 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files
-.env*.local
+# Environment files
 .env
+.env.local
 .env.production
 
-# vercel
-.vercel
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.venv/
+venv/
+env/
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Database
+*.db
+*.sqlite3
+
+# Logs and temporary files
+*.log
+logs/*.log
+nohup.out
+start_output.log
+backup_output.log
+.service_pids
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
-Thumbs.db
 .DS_Store
+Thumbs.db
 
-# logs
-logs
-*.log
+# RPA/Browser data
+chrome_profiles/
+screenshots/
+downloads/
+debug/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+test_*.py
+check_*.py
+debug_*.py
+investigate_*.py
+
+# Development and cleanup
+debug.py
+test_local.py
+cleanup_project.py
+
+# Archives and backups - ignore completely
+backups/
+archive/
+
+# Service-specific
+rpa_all_results.log
+*.pid
+
+# Cookies and browser profiles
+cookies/
+browser_profiles/
+
+# Site dependencies (frontend)
+site/node_modules/
+site/.next/
+
+# Credentials and secrets
+*.json
+!data/*.json
+!package.json
+!package-lock.json
+client_secret_*.json

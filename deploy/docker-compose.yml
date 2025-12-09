@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: vnorku_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vnorku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-vnorku}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - vnorku_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vnorku}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: vnorku_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - vnorku_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js сайт
+  site:
+    build:
+      context: ./site
+      dockerfile: Dockerfile
+    container_name: vnorku_site
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - vnorku_network
+    depends_on:
+      - postgres
+
+  # Caddy reverse proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: vnorku_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - vnorku_network
+    depends_on:
+      - site
+
+networks:
+  vnorku_network:
+    name: vnorku_network
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

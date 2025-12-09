@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: korzinka-postgres-prod
+    environment:
+      POSTGRES_DB: korzinka
+      POSTGRES_USER: korzinka_user
+      POSTGRES_PASSWORD: korzinka_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - korzinka-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U korzinka_user -d korzinka"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: korzinka-redis-prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - korzinka-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  user-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.user-service
+    container_name: korzinka-user-service
+    environment:
+      - DATABASE_URL=postgresql://korzinka_user:korzinka_pass@postgres:5432/korzinka
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - korzinka-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  order-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.order-service
+    container_name: korzinka-order-service
+    environment:
+      - DATABASE_URL=postgresql://korzinka_user:korzinka_pass@postgres:5432/korzinka
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - korzinka-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.telegram-bot
+    container_name: korzinka-telegram-bot
+    environment:
+      - DATABASE_URL=postgresql://korzinka_user:korzinka_pass@postgres:5432/korzinka
+      - REDIS_URL=redis://redis:6379/0
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    depends_on:
+      user-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    networks:
+      - korzinka-network
+    restart: unless-stopped
+
+  # RPA Service с браузером
+  rpa-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rpa-service
+    container_name: korzinka-rpa-service
+    environment:
+      - DATABASE_URL=postgresql://korzinka_user:korzinka_pass@postgres:5432/korzinka
+      - DISPLAY=:99
+    ports:
+      - "8004:8004"
+      - "5900:5900"  # VNC для удаленного просмотра браузера
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - korzinka-network
+    restart: unless-stopped
+    volumes:
+      - /dev/shm:/dev/shm  # Для стабильной работы Chrome
+    cap_add:
+      - SYS_ADMIN  # Для Chrome sandbox
+
+  # Nginx как reverse proxy и load balancer
+  nginx:
+    image: nginx:alpine
+    container_name: korzinka-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - user-service
+      - order-service
+    networks:
+      - korzinka-network
+    restart: unless-stopped
+
+  # Мониторинг
+  prometheus:
+    image: prom/prometheus
+    container_name: korzinka-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - korzinka-network
+
+  grafana:
+    image: grafana/grafana
+    container_name: korzinka-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - korzinka-network
+
+networks:
+  korzinka-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:

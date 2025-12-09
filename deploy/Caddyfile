@@ -1,0 +1,22 @@
+vnorku.ru {
+    reverse_proxy site:3000
+
+    encode gzip
+
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output file /var/log/caddy/vnorku.log
+        format json
+    }
+}
+
+www.vnorku.ru {
+    redir https://vnorku.ru{uri} permanent
+}

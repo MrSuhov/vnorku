@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# Временные SQL файлы
+step*.sql
+test*.sql
+temp*.sql
+*.tmp
+
+# Логи
+*.log
+
+# Резервные копии
+*.backup
+*.bak
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

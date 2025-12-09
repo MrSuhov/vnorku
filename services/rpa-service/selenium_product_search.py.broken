@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""
+Утилиты для Selenium-поиска продуктов
+Содержит классы и функции для извлечения данных о товарах из веб-страниц
+"""
+
+import asyncio
+import logging
+import re
+from typing import List, Dict, Any, Optional
+from selenium.webdriver.common.by import By
+
+logger = logging.getLogger(__name__)
+
+def get_search_results_key(driver, container_selector: str, item_selector: str, url_selector: str) -> Optional[str]:
+    """
+    Вычисляет ключ идемпотентности для результатов поиска
+    
+    Ключ = "count:{количество_товаров}|url:{url_первого_товара}"
+    
+    Args:
+        driver: Selenium WebDriver
+        container_selector: Селектор контейнера с товарами
+        item_selector: Селектор элемента товара
+        url_selector: Селектор для URL товара
+        
+    Returns:
+        Строка-ключ или None если контейнер не найден/пуст
+    """
+    try:
+        # Проверяем что все селекторы переданы
+        if not container_selector or not item_selector or not url_selector:
+            logger.debug(f"🔑 Missing selectors: container={container_selector}, item={item_selector}, url={url_selector}")
+            return None
+        
+        # Находим контейнер
+        if container_selector.startswith('//'):
+            container_elements = driver.find_elements(By.XPATH, container_selector)
+        else:
+            container_elements = driver.find_elements(By.CSS_SELECTOR, container_selector)
+        
+        if not container_elements:
+            logger.debug(f"🔑 Container not found: {container_selector}")
+            return None
+        
+        container = container_elements[0]
+        
+        # Находим все товары внутри контейнера
+        if item_selector.startswith('//'):
+            items = container.find_elements(By.XPATH, item_selector)
+        else:
+            items = container.find_elements(By.CSS_SELECTOR, item_selector)
+        
+        if not items:
+            logger.debug(f"🔑 No items found in container")
+            return None
+        
+        item_count = len(items)
+        
+        # Извлекаем URL первого товара
+        first_item = items[0]
+        first_url = "no-url"
+        
+        try:
+            # Проверяем, это XPath атрибут или селектор
+            if '@' in url_selector:
+                # Это XPath атрибут - берем href напрямую
+                first_url = first_item.get_attribute('href') or "no-url"
+            else:
+                # Ищем элемент с URL
+                if url_selector.startswith('//'):
+                    url_element = first_item.find_element(By.XPATH, url_selector)
+                else:
+                    url_element = first_item.find_element(By.CSS_SELECTOR, url_selector)
+                first_url = url_element.get_attribute('href') or "no-url"
+            
+            # Укорачиваем URL для ключа (берем только path)
+            if first_url and first_url != "no-url":
+                from urllib.parse import urlparse
+                parsed = urlparse(first_url)
+                first_url = parsed.path or first_url
+        except Exception as e:
+            logger.debug(f"⚠️ Could not extract URL from first item: {e}")
+            first_url = "no-url"
+        
+        # Формируем ключ
+        key = f"count:{item_count}|url:{first_url}"
+        logger.debug(f"🔑 Search results key: {key}")
+        return key
+        
+    except Exception as e:
+        logger.debug(f"⚠️ Error calculating search results key: {e}")
+        return None
+
+def extract_numeric_value(driver, selector: str) -> Optional[float]:
+    """
+    Извлекает числовое значение из текста элемента с детальным логированием
+    
+    Args:
+        driver: Selenium WebDriver
+        selector: CSS или XPath селектор
+        
+    Returns:
+        Число или 0.0 если не удалось извлечь (для случаев типа "Бесплатно")
+    """
+    try:
+        # Шаг 1: Найти элемент
+        if selector.startswith('//') or selector.startswith('.//') or selector.startswith('(//'):
+            element = driver.find_element(By.XPATH, selector)
+        else:
+            element = driver.find_element(By.CSS_SELECTOR, selector)
+        
+        # Шаг 2: Получить текст
+        text = element.text.strip()
+        logger.info(f"🔢 extract_numeric_value: Исходный текст = '{text}' (selector: {selector[:50]}...)")
+        
+        if not text:
+            logger.warning(f"⚠️ extract_numeric_value: Элемент найден, но текст пустой")
+            return 0.0
+        
+        # Шаг 3: Проверяем на "Бесплатно" или подобные фразы
+        if any(word in text.lower() for word in ['бесплатн', 'free', 'даром']):
+            logger.info(f"✅ extract_numeric_value: Обнаружено 'Бесплатно' -> 0.0")
+            return 0.0
+        
+        # Шаг 4: Извлечь ПОСЛЕДНЕЕ число перед символом валюты ₽/руб
+        # Паттерн: ищем все числа перед ₽, берем последнее
+        currency_pattern = r'[₽руб]'
+        currency_match = re.search(currency_pattern, text, re.IGNORECASE)
+        
+        if currency_match:
+            # Получаем текст ДО первого символа валюты
+            text_before_currency = text[:currency_match.start()]
+            logger.debug(f"📝 Текст до валюты: '{text_before_currency}'")
+            
+            # Извлекаем ВСЕ числа (могут быть с пробелами типа "1 500")
+            numbers = re.findall(r'\d+', text_before_currency)
+            
+            if numbers:
+                # Берем ПОСЛЕДНЕЕ число перед валютой
+                last_number_str = numbers[-1]
+                logger.debug(f"🔍 Все числа до валюты: {numbers}, выбрано последнее: '{last_number_str}'")
+                
+                try:
+                    extracted_value = float(last_number_str)
+                    logger.info(f"✅ extract_numeric_value: Извлечено число = {extracted_value}")
+                    return extracted_value
+                except ValueError:
+                    logger.error(f"❌ Не удалось преобразовать '{last_number_str}' в число")
+                    return 0.0
+            else:
+                logger.warning(f"⚠️ Не найдено чисел перед символом валюты")
+        
+        # Шаг 5: Fallback - пробуем старые паттерны если нет символа валюты
+        patterns = [
+            r'от\s+(\d+[\s,]?\d*)',         # "от 1500"
+            r'(\d+[\s,]?\d*)\s*$',          # число в конце строки
+            r'^(\d+[\s,]?\d*)',              # число в начале строки
+            r'(\d+[\s,]?\d*)',               # любое число в строке
+        ]
+        
+        for i, pattern in enumerate(patterns, 1):
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                number_str = match.group(1)
+                # Удаляем пробелы и запятые (разделители тысяч)
+                number_str = number_str.replace(' ', '').replace(',', '')
+                
+                try:
+                    extracted_value = float(number_str)
+                    logger.info(f"✅ extract_numeric_value (fallback): Извлечено число = {extracted_value} (паттерн {i})")
+                    return extracted_value
+                except ValueError:
+                    logger.debug(f"⚠️ Pattern {i} matched but failed to parse: '{number_str}'")
+                    continue
+        
+        # Шаг 6: Последний fallback - просто ищем любые цифры
+        logger.warning(f"⚠️ extract_numeric_value: Все паттерны failed, последний fallback")
+        cleaned = re.sub(r'[^\d]', '', text)
+        
+        if cleaned:
+            try:
+                extracted_value = float(cleaned)
+                logger.info(f"✅ extract_numeric_value (last fallback): Извлечено число = {extracted_value}")
+                return extracted_value
+            except ValueError:
+                logger.error(f"❌ extract_numeric_value: Не удалось преобразовать '{cleaned}' в число")
+                return 0.0
+        else:
+            logger.warning(f"⚠️ extract_numeric_value: Не найдено чисел в тексте, возвращаем 0.0")
+            return 0.0
+        
+    except Exception as e:
+        logger.error(f"❌ extract_numeric_value: Критическая ошибка для селектора '{selector}': {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        return 0.0
+
+class ProductSearchResult:
+    """Результат поиска продукта"""
+    def __init__(self, order_item_id: int, product_name: str, search_query: str = None, 
+                 found_name: str = None, price: float = 0.0, unit: str = 'шт', 
+                 quantity: float = 1.0, available_stock: int = 1, product_url: str = None,
+                 lsd_name: str = None, search_position: int = 1, 
+                 min_order_amount: float = 0.0, delivery_cost: float = 0.0, delivery_cost_model: dict = None,
+                 is_alternative: bool = False, alternative_for: str = None):
+        self.order_item_id = order_item_id
+        self.product_name = product_name
+        self.search_query = search_query or product_name
+        self.found_name = found_name or product_name
+        self.price = price
+        self.unit = unit
+        self.quantity = quantity
+        self.available_stock = available_stock
+        self.product_url = product_url
+        self.lsd_name = lsd_name
+        self.search_position = search_position
+        self.min_order_amount = min_order_amount
+        self.delivery_cost = delivery_cost
+        self.delivery_cost_model = delivery_cost_model
+        self.found_items = []
+        self.search_successful = False
+        self.error_message = None
+        # Поддержка альтернатив
+        self.is_alternative = is_alternative
+        self.alternative_for = alternative_for
+
+

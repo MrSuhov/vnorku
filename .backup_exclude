@@ -1,0 +1,13 @@
+# Исключения для бэкапа
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+logs/*.png
+logs/*.json
+.DS_Store
+*.pid
+.service_pids
+.bot_pid
+node_modules/
