@@ -43,8 +43,18 @@ from shared.utils.message_logger import (
     IncomingCategory,
     OutgoingCategory
 )
-from shared.database.connection import SessionLocal
+from shared.database.connection import SessionLocal, AsyncSessionLocal
 from utils.message_helpers import send_message_with_log, get_user_id_from_telegram
+
+
+def get_db_factory(context):
+    """Получить фабрику async сессий из контекста бота"""
+    return context.bot_data.get('db_session_factory')
+
+
+def get_sync_db():
+    """Получить синхронную сессию для логирования"""
+    return SessionLocal()
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -399,15 +409,24 @@ class KorzinkaTelegramBot:
             contact = update.message.contact
             user_id = update.effective_user.id
             phone = contact.phone_number
-            db = context.bot_data.get('db_session')
-            
-            # Логируем входящий контакт
-            if db:
+
+            # Создаём async сессию для этого хендлера
+            db_factory = get_db_factory(context)
+            db = None
+            if db_factory:
+                db = db_factory()
+
+            # Логируем входящий контакт (используем sync сессию)
+            try:
+                sync_db = get_sync_db()
                 log_incoming_message(
-                    db=db,
+                    db=sync_db,
                     update=update,
                     category=IncomingCategory.CONTACT
                 )
+                sync_db.close()
+            except Exception as e:
+                print(f"⚠️ Failed to log incoming contact: {e}")
             
             # Нормализуем номер телефона - добавляем + если его нет
             if not phone.startswith('+'):
@@ -515,8 +534,13 @@ class KorzinkaTelegramBot:
             user_id = update.effective_user.id
             text = update.message.text
             chat_type = update.effective_chat.type
-            db = context.bot_data.get('db_session')
-            
+
+            # Создаём async сессию для этого хендлера
+            db_factory = get_db_factory(context)
+            db = None
+            if db_factory:
+                db = db_factory()
+
             print(f"📨 SMART HANDLER: '{text}' from {user_id} in {chat_type}")
             
             # Пропускаем команды - они обрабатываются отдельными CommandHandler'ами
@@ -543,13 +567,17 @@ class KorzinkaTelegramBot:
             # Личные сообщения - СНАЧАЛА получаем статус пользователя
             print(f"👤 Private message - checking status first")
             
-            # Логируем входящее сообщение (категорию определим позже)
-            if db:
+            # Логируем входящее сообщение (используем sync сессию)
+            try:
+                sync_db = get_sync_db()
                 log_incoming_message(
-                    db=db,
+                    db=sync_db,
                     update=update,
-                    category=IncomingCategory.TEXT  # По умолчанию, уточним позже
+                    category=IncomingCategory.TEXT  # По умолчанию
                 )
+                sync_db.close()
+            except Exception as e:
+                print(f"⚠️ Failed to log incoming message: {e}")
             
             # ПОЛУЧАЕМ СТАТУС ПОЛЬЗОВАТЕЛЯ ПЕРВЫМ!
             from handlers.registration_mock import MOCK_USERS
@@ -1571,16 +1599,25 @@ class KorzinkaTelegramBot:
     async def browse_command(self, update, context):
         """Обработчик команды /browse - Открыть браузер с сохраненными куками"""
         user_id = update.effective_user.id
-        db = context.bot_data.get('db_session')
-        
-        # Логируем входящую команду
-        if db:
+
+        # Создаём async сессию для этого хендлера
+        db_factory = get_db_factory(context)
+        db = None
+        if db_factory:
+            db = db_factory()
+
+        # Логируем входящую команду (используем sync сессию)
+        try:
+            sync_db = get_sync_db()
             log_incoming_message(
-                db=db,
+                db=sync_db,
                 update=update,
                 category=IncomingCategory.COMMAND
             )
-        
+            sync_db.close()
+        except Exception as e:
+            print(f"⚠️ Failed to log incoming command: {e}")
+
         print(f"🌍 /browse from {user_id}")
         
         try:
@@ -1705,16 +1742,24 @@ class KorzinkaTelegramBot:
     
     async def help_command(self, update, context):
         """Обработчик команды /help"""
-        db = context.bot_data.get('db_session')
-        
-        # Логируем входящую команду
-        if db:
+        # Создаём async сессию для этого хендлера
+        db_factory = get_db_factory(context)
+        db = None
+        if db_factory:
+            db = db_factory()
+
+        # Логируем входящую команду (используем sync сессию)
+        try:
+            sync_db = get_sync_db()
             log_incoming_message(
-                db=db,
+                db=sync_db,
                 update=update,
                 category=IncomingCategory.COMMAND
             )
-        
+            sync_db.close()
+        except Exception as e:
+            print(f"⚠️ Failed to log incoming command: {e}")
+
         help_text = (
             "🛒 *Korzinka Bot* - ваш помощник для оптимальных покупок\n\n"
             "*Как пользоваться:*\n"
@@ -1745,16 +1790,25 @@ class KorzinkaTelegramBot:
     async def status_command(self, update, context):
         """Обработчик команды /status"""
         user_id = update.effective_user.id
-        db = context.bot_data.get('db_session')
-        
-        # Логируем входящую команду
-        if db:
+
+        # Создаём async сессию для этого хендлера
+        db_factory = get_db_factory(context)
+        db = None
+        if db_factory:
+            db = db_factory()
+
+        # Логируем входящую команду (используем sync сессию)
+        try:
+            sync_db = get_sync_db()
             log_incoming_message(
-                db=db,
+                db=sync_db,
                 update=update,
                 category=IncomingCategory.COMMAND
             )
-        
+            sync_db.close()
+        except Exception as e:
+            print(f"⚠️ Failed to log incoming command: {e}")
+
         try:
             # Получаем данные пользователя
             user_data = await self.get_user_from_database(user_id)
@@ -2207,6 +2261,10 @@ def main() -> None:
 
     # Создаем приложение
     bot.application = Application.builder().token(settings.telegram_bot_token).build()
+
+    # Инициализируем фабрику сессий БД в bot_data
+    from shared.database import AsyncSessionLocal
+    bot.application.bot_data['db_session_factory'] = AsyncSessionLocal
 
     # Настраиваем обработчики
     bot.setup_handlers()
