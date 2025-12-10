@@ -1756,11 +1756,11 @@ class KorzinkaTelegramBot:
             # Получаем данные пользователя
             user_data = await self.get_user_from_database(user_id)
             
-            if not user_data or not user_data.get('telegram_id'):
-                # Автоматически начинаем регистрацию
+            if not user_data or not user_data.get('telegram_id') or not user_data.get('phone'):
+                # Пользователь не зарегистрирован или не завершил регистрацию - начинаем с начала
                 await self._start_registration(update, context)
                 return
-            
+
             status = user_data.get('status')
             phone = user_data.get('phone')
             address = user_data.get('address')
@@ -1856,8 +1856,8 @@ class KorzinkaTelegramBot:
         # Проверяем, зарегистрирован ли пользователь
         user_data = await self.get_user_from_database(user_id)
 
-        if not user_data or not user_data.get('telegram_id'):
-            # Автоматически начинаем регистрацию
+        if not user_data or not user_data.get('telegram_id') or not user_data.get('phone'):
+            # Пользователь не зарегистрирован или не завершил регистрацию - начинаем с начала
             await self._start_registration(update, context)
             return
 
@@ -1923,8 +1923,8 @@ class KorzinkaTelegramBot:
         # Проверяем, зарегистрирован ли пользователь
         user_data = await self.get_user_from_database(user_id)
 
-        if not user_data or not user_data.get('telegram_id'):
-            # Автоматически начинаем регистрацию
+        if not user_data or not user_data.get('telegram_id') or not user_data.get('phone'):
+            # Пользователь не зарегистрирован или не завершил регистрацию - начинаем с начала
             await self._start_registration(update, context)
             return
 
