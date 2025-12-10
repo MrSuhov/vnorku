@@ -46,6 +46,91 @@ ssh -O exit 109.73.207.207
 
 Конфигурация в `~/.ssh/config`, сокеты в `~/.ssh/controlmasters/`
 
+## Workflow разработки и деплоя
+
+**ВАЖНО**: Все изменения должны проходить строгую последовательность:
+
+```
+LOCAL (dev) → GIT (GitHub) → SERVER (prod)
+```
+
+### 1. Разработка на локальной машине (DEV)
+
+```bash
+# Убедиться что используется DEV токен в .env
+# TELEGRAM_BOT_TOKEN=8422...  (DEV)
+
+# Запустить локальные сервисы
+./start_services.sh
+
+# Внести изменения в код
+# Тестировать через DEV-бота в Telegram
+```
+
+### 2. Коммит и пуш в GitHub
+
+После успешного тестирования на DEV:
+
+```bash
+# Проверить изменения
+git status
+git diff
+
+# Закоммитить
+git add <измененные файлы>
+git commit -m "описание изменений"
+
+# Запушить в GitHub
+git push origin main
+```
+
+### 3. Деплой на сервер (PROD)
+
+```bash
+# Подключиться к серверу и обновить код из git
+ssh 109.73.207.207 "cd /home/teamvnorku/vnorku/backend && git pull origin main"
+
+# Перезапустить нужные сервисы
+ssh 109.73.207.207 "screen -X -S vnorku_bot quit; screen -dmS vnorku_bot bash -c 'cd /home/teamvnorku/vnorku/backend && source venv/bin/activate && python3 services/telegram-bot/main.py 2>&1 | tee -a logs/telegram-bot.log'"
+
+# Проверить что сервис запустился
+ssh 109.73.207.207 "tail -20 /home/teamvnorku/vnorku/backend/logs/telegram-bot.log"
+```
+
+### Быстрые команды деплоя
+
+```bash
+# Полный деплой telegram-bot
+ssh 109.73.207.207 "cd /home/teamvnorku/vnorku/backend && git pull && screen -X -S vnorku_bot quit; screen -dmS vnorku_bot bash -c 'cd /home/teamvnorku/vnorku/backend && source venv/bin/activate && python3 services/telegram-bot/main.py 2>&1 | tee -a logs/telegram-bot.log'"
+
+# Полный деплой user-service
+ssh 109.73.207.207 "cd /home/teamvnorku/vnorku/backend && git pull && screen -X -S vnorku_user quit; screen -dmS vnorku_user bash -c 'cd /home/teamvnorku/vnorku/backend && source venv/bin/activate && python3 services/user-service/main.py 2>&1 | tee -a logs/user-service.log'"
+```
+
+### Структура на сервере
+
+```
+/home/teamvnorku/vnorku/
+├── backend/              # Git репозиторий (клон GitHub)
+│   ├── .git/             # Git данные
+│   ├── .env              # PROD конфигурация (НЕ в git!)
+│   ├── venv/             # Python виртуальное окружение (НЕ в git!)
+│   ├── logs/             # Логи сервисов (НЕ в git!)
+│   └── ...               # Остальной код из репозитория
+└── site/                 # Frontend (отдельная директория)
+```
+
+### Важные правила
+
+1. **НИКОГДА** не редактируй код напрямую на сервере — только через git
+2. **НИКОГДА** не пуш в git без тестирования на DEV
+3. `.env` файлы **НЕ** хранятся в git — на DEV и PROD они разные
+4. `venv/` **НЕ** хранится в git — создается отдельно на каждой машине
+5. При изменении `requirements.txt` — обновить venv на сервере:
+   ```bash
+   ssh 109.73.207.207 "cd /home/teamvnorku/vnorku/backend && source venv/bin/activate && pip install -r requirements.txt"
+   ```
+
 ## Архитектура
 
 **Микросервисная архитектура** из 5 независимых Python-сервисов, взаимодействующих по HTTP:
